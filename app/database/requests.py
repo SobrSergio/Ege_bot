@@ -1,118 +1,130 @@
-from app.database.models import async_session
-from app.database.models import User
-from sqlalchemy import select, func
+from sqlalchemy import delete, select, func
+from app.database.models import async_session, User, Mistake, ParonymsMistake
+import ast
+
+
+async def get_user_by_tg_id(tg_id: int):
+    async with async_session() as session:
+        return await session.scalar(select(User).where(User.tg_id == tg_id))
 
 
 async def set_user(tg_id: int, username: str) -> None:
-    async with async_session() as session:
-        user = await session.scalar(select(User).where(User.tg_id == tg_id))
-
-        if not user:
+    user = await get_user_by_tg_id(tg_id)
+    if not user:
+        async with async_session() as session:
             session.add(User(tg_id=tg_id, username=username))
             await session.commit()
-            return 1
-        return 0
+
 
 async def is_admin(tg_id: int) -> bool:
-    async with async_session() as session:
-        user = await session.scalar(select(User).where(User.tg_id == tg_id))
-        return user.is_admin if user else False
-    
+    user = await get_user_by_tg_id(tg_id)
+    return user.is_admin if user else False
+
 
 async def get_all_users() -> list:
     async with async_session() as session:
-        result = await session.scalars(select(User.tg_id))
-        return result.all()
+        return (await session.scalars(select(User.tg_id))).all()
+
 
 async def get_user_count() -> int:
     async with async_session() as session:
-        count = await session.scalar(select(func.count(User.id)))
-        return count
-    
-async def save_user_mistake(tg_id: int, category: str, word_wrong: str, word_right: str) -> None:
-    async with async_session() as session:
-        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        return await session.scalar(select(func.count(User.id)))
 
-        if user:
-            if category == 'accents':
-                mistakes = user.accents_repet
-            elif category == 'dictionary':
-                mistakes = user.dictionary_repet
-            elif category == 'norms':
-                mistakes = user.norms_repet
-            else:
-                return 
 
-            new_mistake = f'{word_wrong}_{word_right}'
-            if new_mistake not in mistakes.split('\n'):
-                if category == 'accents':
-                    user.accents_repet += (f'{new_mistake}\n')
-                elif category == 'dictionary':
-                    user.dictionary_repet += (f'{new_mistake}\n')
-                elif category == 'norms':
-                    user.norms_repet += (f'{new_mistake}\n')
-
-                await session.commit()
-                
-async def get_user_mistakes(tg_id: int, category: str) -> list:
-    async with async_session() as session:
-        user = await session.scalar(select(User).where(User.tg_id == tg_id))
-
-        if not user:
-            return []
-
-        mistakes = []
-        if category == 'accents':
-            mistakes = user.accents_repet.strip().split('\n')
-        elif category == 'dictionary':
-            mistakes = user.dictionary_repet.strip().split('\n')
-        elif category == 'norms':
-            mistakes = user.norms_repet.strip().split('\n')
-
-        return [{'correct_word': item.split('_')[0], 'wrong_word': item.split('_')[1]} for item in mistakes if '_' in item]
-    
 async def get_user_mistake_count(tg_id: int, category: str) -> int:
+    user = await get_user_by_tg_id(tg_id)
+    if not user:
+        return 0
+
+    model = ParonymsMistake if category == "paronyms" else Mistake
+    filters = [model.user_id == user.id]
+    if category != "paronyms":
+        filters.append(model.category == category)
+
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        return await session.scalar(select(func.count(model.id)).where(*filters))
 
-        if not user:
-            return 0
 
-        mistakes = []
-        if category == 'accents':
-            mistakes = user.accents_repet.strip().split('\n')
-        elif category == 'dictionary':
-            mistakes = user.dictionary_repet.strip().split('\n')
-        elif category == 'norms':
-            mistakes = user.norms_repet.strip().split('\n')
+async def get_user_mistakes(tg_id: int, category: str) -> list:
+    user = await get_user_by_tg_id(tg_id)
+    if not user:
+        return []
 
-        # Возвращаем количество ошибок (фильтруем пустые строки)
-        return len([item for item in mistakes if item])
-
-async def remove_user_mistake(tg_id: int, category: str, word_right: str) -> None:
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        model = ParonymsMistake if category == "paronyms" else Mistake
+        mistakes = await session.scalars(
+            select(model).where(model.user_id == user.id)
+        )
+        if category == "paronyms":
+            return [
+                {
+                    'words': m.paronym_wrong,
+                    'all_paronyms': ast.literal_eval(m.all_paronyms),
+                    'words_dop': m.explanation
+                } 
+                for m in mistakes
+            ]
+        else:
+            return [
+                {
+                    'words': m.correct_word,
+                    'words_dop': m.wrong_word
+                } 
+                for m in mistakes
+            ]
 
-        if user:
-            if category == 'accents':
-                mistakes = user.accents_repet.split('\n')
-            elif category == 'dictionary':
-                mistakes = user.dictionary_repet.split('\n')
-            elif category == 'norms':
-                mistakes = user.norms_repet.split('\n')
-            else:
-                return
 
-            # Удаляем ошибку из списка
-            mistakes = [mistake for mistake in mistakes if mistake and mistake.split('_')[0] != word_right]
+async def save_user_mistake(tg_id: int, category: str, wrong_word: str = None, correct_word: str = None, all_paronyms: list = None, explanation: str = None) -> None:
+    user = await get_user_by_tg_id(tg_id)
+    if not user:
+        return
 
-            # Обновляем поле с ошибками
-            if category == 'accents':
-                user.accents_repet = '\n'.join(mistakes) + '\n'
-            elif category == 'dictionary':
-                user.dictionary_repet = '\n'.join(mistakes) + '\n'
-            elif category == 'norms':
-                user.norms_repet = '\n'.join(mistakes) + '\n'
-
+    async with async_session() as session:
+        model = ParonymsMistake if category == "paronyms" else Mistake
+        filter_conditions = (
+            (model.user_id == user.id) &
+            (model.paronym_wrong == wrong_word) &
+            (model.all_paronyms == str(all_paronyms)) &
+            (model.explanation == explanation)
+        ) if category == "paronyms" else (
+            (model.user_id == user.id) &
+            (model.category == category) &
+            (model.wrong_word == wrong_word) &
+            (model.correct_word == correct_word)
+        )
+        
+        existing_mistake = await session.scalar(select(model).where(filter_conditions))
+        if not existing_mistake:
+            new_mistake = model(
+                user_id=user.id,
+                paronym_wrong=wrong_word,
+                all_paronyms=str(all_paronyms),
+                explanation=explanation
+            ) if category == "paronyms" else model(
+                user_id=user.id,
+                category=category,
+                wrong_word=wrong_word,
+                correct_word=correct_word
+            )
+            session.add(new_mistake)
             await session.commit()
 
+
+async def remove_user_mistake(tg_id: int, category: str, word_right: str = None, paronym_wrong: str = None) -> None:
+    user = await get_user_by_tg_id(tg_id)
+    if not user:
+        return
+
+    async with async_session() as session:
+        model = ParonymsMistake if category == "paronyms" else Mistake
+        conditions = (
+            (model.user_id == user.id) &
+            (model.paronym_wrong == paronym_wrong)
+        ) if category == "paronyms" else (
+            (model.user_id == user.id) &
+            (model.category == category) &
+            (model.correct_word == word_right)
+        )
+        
+        await session.execute(delete(model).where(conditions))
+        await session.commit()

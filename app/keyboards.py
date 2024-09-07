@@ -6,7 +6,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 async def main_menu():
     keyboard = [
-        [InlineKeyboardButton(text='📢 Ударения', callback_data=f'category_accents')],
+        [InlineKeyboardButton(text='📢 Ударения', callback_data=f'category_accents'), 
+         InlineKeyboardButton(text='🎭 Паронимы', callback_data='category_paronyms')],
         [InlineKeyboardButton(text='✏️ Словарные слова', callback_data=f'category_dictionary'), 
          InlineKeyboardButton(text='📚 Морф. нормы', callback_data=f'category_norms')],
     ]
