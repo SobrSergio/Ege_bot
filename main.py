@@ -11,7 +11,7 @@ from app import admin_handlers
 from app import handlers
 from app.database.models import async_main
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 async def main():

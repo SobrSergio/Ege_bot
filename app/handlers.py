@@ -54,7 +54,19 @@ async def cmd_start(message: Message):
     """
     user_id = message.from_user.id
     create = await rq.set_user(user_id, message.from_user.full_name)
-    formatted_message = start_messages.format(name=message.from_user.full_name) if create else "✍️ <b>Егэ русский язык</b>"
+    
+    if create:
+        formatted_message = f"""<b>👋 Привет, {message.from_user.full_name}!</b>
+                                  
+👨‍🏫 Я бот, который поможет тебе выучить ударения, морфологические нормы 
+и словарные слова для ЕГЭ 2024!
+Во мне все нужные слова, которые есть в банке <b>ФИПИ</b>!
+
+Если у вас возникнут проблемы, или вы найдете ошибку, или у вас классная идея, как дополнить бота, прошу нажать /help и написать о ней! Спасибо)
+
+Выбери, что тебе нужно."""
+    else:
+        formatted_message = "✍️ <b>Егэ русский язык</b>"
 
     sent_message = await message.bot.send_message(
         chat_id=user_id,
@@ -64,7 +76,7 @@ async def cmd_start(message: Message):
     )
     user_message_ids[user_id] = sent_message.message_id  
 
-    await message.delete() 
+    await message.delete()
     
 @router.message(Command(commands='help'))
 async def cmd_help(message: Message):
@@ -192,7 +204,13 @@ async def send_next_question(message: Message, state: FSMContext, result_message
     Создание следующего вопроса.
     """
     try:
+        
         data = await state.get_data()
+        if not data:
+            await send_or_edit_message(message.bot, message.from_user.id, user_message_ids.get(message.from_user.id), "⏳ Ваша сессия истекла или была сброшена. Пожалуйста, начните заново.", await kb.main_menu())
+            await state.clear()
+            return
+        
         category_name = data.get('category')
 
         # Проверяем, завершены ли слова
@@ -246,7 +264,7 @@ async def send_next_question(message: Message, state: FSMContext, result_message
             ]
             answer_buttons.append(InlineKeyboardButton(text="🔙 Завершить", callback_data=f"close_{data['category']}"))
 
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[answer_buttons])
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[button] for button in answer_buttons])
             result_message = "Выберите верный ответ: " if not result_message else result_message
 
         await state.update_data(data)
@@ -264,7 +282,13 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
     Обрабатывает ответы пользователя на вопросы.
     Удаляет или сохраняет ошибку в зависимости от правильности ответа.
     """
+    
     data = await state.get_data()
+    if not data:
+        await send_or_edit_message(callback.message.bot, callback.from_user.id, user_message_ids.get(callback.from_user.id), "⏳ Ваша сессия истекла или была сброшена. Пожалуйста, начните заново.", await kb.main_menu())
+        await state.clear()
+        return
+        
     correct_word, wrong_word = data.get('current_pair', (None, None))
 
     try:
@@ -297,8 +321,13 @@ async def handle_paronyms_answer(callback: CallbackQuery, state: FSMContext):
     Обрабатывает ответы пользователя на вопросы по паронимам.
     """
     try:
+        
         data = await state.get_data()
-
+        if not data:
+            await send_or_edit_message(callback.message.bot, callback.from_user.id, user_message_ids.get(callback.from_user.id), "⏳ Ваша сессия истекла или была сброшена. Пожалуйста, начните заново.", await kb.main_menu())
+            await state.clear()
+            return
+        
         chosen_paronym = callback.data.split('_')[1]
         correct_paronym = data.get('current_pair')
         correct_explanation = data.get('correct_explanation')

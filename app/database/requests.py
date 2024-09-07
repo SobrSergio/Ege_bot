@@ -8,12 +8,14 @@ async def get_user_by_tg_id(tg_id: int):
         return await session.scalar(select(User).where(User.tg_id == tg_id))
 
 
-async def set_user(tg_id: int, username: str) -> None:
+async def set_user(tg_id: int, username: str) -> bool:
     user = await get_user_by_tg_id(tg_id)
     if not user:
         async with async_session() as session:
             session.add(User(tg_id=tg_id, username=username))
             await session.commit()
+        return True
+    return False
 
 
 async def is_admin(tg_id: int) -> bool:
