@@ -32,6 +32,13 @@ async def get_user_count() -> int:
     async with async_session() as session:
         return await session.scalar(select(func.count(User.id)))
 
+async def delete_user_by_tg_id(tg_id: int) -> None:
+    """
+    Удаляет пользователя из базы данных по его Telegram ID.
+    """
+    async with async_session() as session:
+        await session.execute(delete(User).where(User.tg_id == tg_id))
+        await session.commit()
 
 async def get_user_mistake_count(tg_id: int, category: str) -> int:
     user = await get_user_by_tg_id(tg_id)
@@ -53,17 +60,26 @@ async def get_user_mistakes(tg_id: int, category: str) -> list:
         return []
 
     async with async_session() as session:
+        # Определение модели в зависимости от категории
         model = ParonymsMistake if category == "paronyms" else Mistake
-        mistakes = await session.scalars(
-            select(model).where(model.user_id == user.id)
-        )
+        
+        # Построение запроса в зависимости от категории
+        query = select(model).where(model.user_id == user.id)
+        if category != "paronyms":
+            query = query.where(model.category == category)
+        
+        # Выполнение запроса
+        results = await session.execute(query)
+        mistakes = results.scalars().all()
+        
+        # Формирование списка ошибок
         if category == "paronyms":
             return [
                 {
                     'words': m.paronym_wrong,
                     'all_paronyms': ast.literal_eval(m.all_paronyms),
                     'words_dop': m.explanation
-                } 
+                }
                 for m in mistakes
             ]
         else:
@@ -71,7 +87,7 @@ async def get_user_mistakes(tg_id: int, category: str) -> list:
                 {
                     'words': m.correct_word,
                     'words_dop': m.wrong_word
-                } 
+                }
                 for m in mistakes
             ]
 

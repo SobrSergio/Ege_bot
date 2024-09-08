@@ -11,6 +11,7 @@ from app import admin_handlers
 from app import handlers
 from app.database.models import async_main
 
+logging.getLogger("aiogram").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 

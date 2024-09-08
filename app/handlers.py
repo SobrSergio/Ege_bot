@@ -45,7 +45,7 @@ async def send_or_edit_message(bot, user_id, user_message_id, text, reply_markup
             user_message_ids[user_id] = sent_message.message_id
     except Exception as e:
         # Логирование ошибок
-        logging.error(f"Error editing or sending message: {e}")
+        pass
     
 @router.message(CommandStart())
 async def cmd_start(message: Message):
@@ -231,12 +231,37 @@ async def send_next_question(message: Message, state: FSMContext, result_message
         
         if category_name == 'paronyms':
             if not data.get('is_error_correction'):
-                data['words'].remove(words)
-                data['words_dop'].remove(words_dop)
-                correct_paronym = random.choice(words)
-                correct_explanation = words_dop[words.index(correct_paronym)]
+                if words in data['words']:
+                    data['words'].remove(words)
+                if words_dop in data['words_dop']:
+                    data['words_dop'].remove(words_dop)
+                else:
+                    await send_or_edit_message(
+                        message.bot, 
+                        message.from_user.id, 
+                        user_message_ids.get(message.from_user.id), 
+                        "⚠️ Ошибка: слово уже удалено. Тест завершен, попробуйте заново.", 
+                        await kb.main_menu()
+                    )
+                    await state.clear()
+                    return
+                
+                # Проверяем корректность индекса перед использованием
+                try:
+                    correct_paronym = random.choice(words)
+                    correct_explanation = words_dop[words.index(correct_paronym)]
+                except IndexError:
+                    await message.edit_text("⚠️ Ошибка: не удалось выбрать правильное слово. Тест завершен.")
+                    await state.clear()
+                    return
             else:
-                word_index = data['words'].index(words)
+                if words in data['words']:
+                    word_index = data['words'].index(words)
+                else:
+                    await message.edit_text("⚠️ Ошибка: Слово не найдено в списке. Тест завершен.")
+                    await state.clear()
+                    return
+                
                 correct_paronym = words
                 words = data['all_paronyms'][word_index]
                 correct_explanation = words_dop
